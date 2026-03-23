@@ -134,48 +134,58 @@ export class Router {
 
       case 'help': case 'h':
         await reply([
-          '— 通用 —',
+          '=== cli-in-wechat 命令 ===',
+          '',
+          '— 设置 —',
           '/status  查看所有配置',
-          '/new  新会话(清除所有工具session)',
-          '/cancel  取消当前任务',
-          '/model <名>  切模型 (reset=默认)',
-          '/mode <auto|safe|plan>  权限模式',
-          '/dir <路径>  切换工作目录',
-          '/system <提示>  追加系统提示词',
-          '/reset  重置所有设置为默认',
-          '/yolo  快捷: mode=auto + effort=max',
-          '',
-          '— Claude Code —',
-          '/effort <low|med|high|max>  思考深度',
-          '/fast  快捷: effort=low',
-          '/turns <数字>  最大agent轮次',
-          '/budget <美元>  API预算 (off=无限)',
-          '/tools <列表>  允许的工具(逗号分隔)',
-          '/notool <列表>  禁用的工具',
-          '/verbose  切换详细输出',
-          '/bare  切换bare模式(跳过配置加载)',
-          '/adddir <路径>  添加额外目录访问',
+          '/model <名>  切模型',
+          '/mode <auto|safe|plan>  权限',
+          '/effort <low|med|high|max>  深度',
+          '/turns <数>  最大轮次',
+          '/budget <$>  预算(off=无限)',
+          '/dir <路径>  工作目录',
+          '/system <词>  追加系统提示',
+          '/tools <列表>  允许工具',
+          '/notool <列表>  禁用工具',
+          '/verbose  详细输出',
+          '/bare  跳过配置加载',
+          '/adddir <路径>  额外目录',
           '/name <名>  会话命名',
+          '/sandbox <ro|write|full>  沙箱',
+          '/search  web搜索(Codex)',
+          '/ephemeral  临时模式(Codex)',
+          '/profile <名>  配置(Codex)',
+          '/approval <模式>  审批(Gemini)',
+          '/include <目录>  上下文(Gemini)',
+          '/ext <名>  扩展(Gemini)',
           '',
-          '— Codex —',
-          '/sandbox <ro|write|full|off>  沙箱',
-          '/search  切换web搜索',
-          '/ephemeral  切换临时模式(不存session)',
-          '/profile <名>  加载配置profile',
+          '— 操作 —',
+          '/diff  查看git差异',
+          '/commit  创建git提交',
+          '/review  代码审查',
+          '/plan [描述]  规划模式/制定计划',
+          '/init  创建项目配置文件',
+          '/files  列出目录结构',
+          '/compact  压缩上下文(清session)',
+          '/stats  使用统计',
           '',
-          '— Gemini —',
-          '/approval <default|auto_edit|yolo|plan>',
-          '/include <目录>  添加上下文目录',
-          '/ext <名|none>  指定extensions',
+          '— 会话 —',
+          '/new  新会话',
+          '/clear  清除所有',
+          '/cancel  取消任务',
+          '/fork  分支当前会话',
+          '/resume  查看保存的会话',
           '',
-          '— 工具切换 —',
-          '/cc /cx /gm /ai  快速切换',
-          '@claude @codex @gemini  指定工具发消息',
+          '— 快捷 —',
+          '/yolo  auto+effort max',
+          '/fast  effort low',
+          '/reset  重置所有设置',
+          '/cc /cx /gm  切工具',
           '',
-          '— 接力 —',
-          '>> <消息>  传上条结果给当前工具',
-          '>> @tool <消息>  传给指定工具',
-          '@tool1>tool2 <消息>  链式调用',
+          '— 发消息 —',
+          '@claude/@codex/@gemini  指定工具',
+          '>>  接力(传上条结果)',
+          '@tool1>tool2  链式调用',
         ].join('\n'));
         return true;
 
@@ -425,6 +435,129 @@ export class Router {
         if (!arg) { await reply(`当前: ${(settings as any).sessionName || '无'}\n/name <名称>`); return true; }
         this.sessions.update(uid, { sessionName: arg } as any);
         await reply(`session name → ${arg}`);
+        return true;
+
+      // ═══════════════════════════════════════════
+      // 操作类 (转化为 prompt 发给当前工具)
+      // ═══════════════════════════════════════════
+
+      case 'compact': case 'compress': case 'summarize': {
+        // Clear session + start fresh with summary instruction
+        this.sessions.clearSession(uid);
+        await reply('会话已压缩 (新session, 旧上下文已清除)');
+        return true;
+      }
+
+      case 'diff': {
+        const tool = settings.defaultTool || this.config.defaultTool;
+        if (this.registry.isAvailable(tool)) {
+          await this.exec(uid, tool, arg || 'Show the current git diff of uncommitted changes. Be concise.');
+        }
+        return true;
+      }
+
+      case 'commit': {
+        const tool = settings.defaultTool || this.config.defaultTool;
+        if (this.registry.isAvailable(tool)) {
+          await this.exec(uid, tool, arg || 'Create a git commit for all staged changes with an appropriate commit message.');
+        }
+        return true;
+      }
+
+      case 'review': {
+        const tool = settings.defaultTool || this.config.defaultTool;
+        if (this.registry.isAvailable(tool)) {
+          await this.exec(uid, tool, arg || 'Review the current code changes (git diff) and provide feedback on quality, bugs, and improvements.');
+        }
+        return true;
+      }
+
+      case 'init': {
+        const tool = settings.defaultTool || this.config.defaultTool;
+        const file = tool === 'codex' ? 'AGENTS.md' : tool === 'gemini' ? 'GEMINI.md' : 'CLAUDE.md';
+        if (this.registry.isAvailable(tool)) {
+          await this.exec(uid, tool, arg || `Analyze this project and create a ${file} configuration file with appropriate instructions.`);
+        }
+        return true;
+      }
+
+      case 'fork': case 'branch': {
+        // Fork = clear session ID so next call doesn't --resume
+        const tool = settings.defaultTool || this.config.defaultTool;
+        this.sessions.clearSession(uid, tool);
+        await reply(`已 fork ${tool} 会话 (下次消息开始新分支)`);
+        return true;
+      }
+
+      case 'cost': case 'usage': case 'stats': {
+        const last = this.lastResponse.get(uid);
+        if (last) {
+          await reply(`上次回复:\n工具: ${last.tool}\n长度: ${last.text.length} 字符`);
+        } else {
+          await reply('暂无回复记录');
+        }
+        return true;
+      }
+
+      case 'files': {
+        const tool = settings.defaultTool || this.config.defaultTool;
+        if (this.registry.isAvailable(tool)) {
+          await this.exec(uid, tool, 'List all files in the current working directory. Show the tree structure concisely.');
+        }
+        return true;
+      }
+
+      case 'plan': {
+        if (arg) {
+          // /plan <description> → send plan request to tool
+          const tool = settings.defaultTool || this.config.defaultTool;
+          if (this.registry.isAvailable(tool)) {
+            await this.exec(uid, tool, `Create a detailed plan for: ${arg}. Only plan, do not execute.`);
+          }
+        } else {
+          // /plan with no args → switch to plan mode
+          this.sessions.update(uid, { mode: 'plan' } as any);
+          await reply('PLAN mode ON');
+        }
+        return true;
+      }
+
+      case 'resume': case 'continue': {
+        // Show current sessions
+        const sids = Object.entries(settings.sessionIds);
+        if (sids.length === 0) {
+          await reply('无保存的会话');
+        } else {
+          const lines = sids.map(([k, v]) => `${k}: ${String(v).substring(0, 12)}...`);
+          await reply(`保存的会话:\n${lines.join('\n')}`);
+        }
+        return true;
+      }
+
+      case 'clear': {
+        this.sessions.clearSession(uid);
+        this.lastResponse.delete(uid);
+        await reply('已清除所有会话和历史');
+        return true;
+      }
+
+      // ═══════════════════════════════════════════
+      // 不适用于微信的命令 (给出说明)
+      // ═══════════════════════════════════════════
+
+      case 'vim': case 'theme': case 'color': case 'terminal-setup':
+      case 'keybindings': case 'chrome': case 'ide': case 'stickers':
+      case 'mobile': case 'ios': case 'android': case 'exit': case 'quit':
+      case 'login': case 'logout': case 'doctor': case 'upgrade':
+      case 'think-back': case 'thinkback':
+      case 'output-style': case 'extra-usage': case 'rate-limit-options':
+      case 'install-github-app': case 'install-slack-app':
+      case 'setup-default-sandbox': case 'sandbox-add-read-dir':
+      case 'collab': case 'realtime': case 'personality':
+      case 'title': case 'statusline': case 'footer': case 'shortcuts':
+      case 'setup-github': case 'remote-env': case 'reload-plugins':
+      case 'debug-config':
+        await reply(`/${cmd} 仅在本地终端可用，不适用于微信`);
         return true;
 
       // ═══════════════════════════════════════════
