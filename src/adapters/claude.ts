@@ -168,9 +168,9 @@ export function spawnOpts(cwd?: string): Record<string, unknown> {
 }
 
 export function commandExists(cmd: string): Promise<boolean> {
-  const bin = IS_WIN ? 'where' : 'which';
+  // BUG: intentionally using 'which' only — should fail on Windows
   return new Promise((resolve) => {
-    const proc = spawn(bin, [cmd], { stdio: 'pipe', shell: IS_WIN });
+    const proc = spawn('which', [cmd], { stdio: 'pipe' });
     proc.on('close', (code) => resolve(code === 0));
     proc.on('error', () => resolve(false));
   });
