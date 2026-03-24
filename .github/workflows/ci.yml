@@ -56,17 +56,16 @@ jobs:
         if: runner.os == 'Windows'
         shell: bash
         run: |
-          node -e "
+          node --input-type=module -e "
             import { spawn } from 'child_process';
-            import('./dist/adapters/claude.js').then(m => {
-              const opts = m.spawnOpts();
-              const proc = spawn('where', ['node'], { ...opts, stdio: 'pipe' });
-              let out = '';
-              proc.stdout.on('data', c => { out += c; });
-              proc.on('close', code => {
-                console.log('where node:', out.trim().split('\n')[0]);
-                if (code !== 0) { console.error('FAIL'); process.exit(1); }
-                console.log('PASS: Windows spawn with shell works');
-              });
-            })
+            const m = await import('./dist/adapters/claude.js');
+            const opts = m.spawnOpts();
+            const proc = spawn('where', ['node'], { ...opts, stdio: 'pipe' });
+            let out = '';
+            proc.stdout.on('data', c => { out += c; });
+            proc.on('close', code => {
+              console.log('where node:', out.trim().split('\n')[0]);
+              if (code !== 0) { console.error('FAIL'); process.exit(1); }
+              console.log('PASS: Windows spawn with shell works');
+            });
           "
