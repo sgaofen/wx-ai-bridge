@@ -164,7 +164,8 @@ const IS_WIN = process.platform === 'win32';
 
 /** Windows needs shell:true to find .cmd/.ps1 wrapper scripts */
 export function spawnOpts(cwd?: string): Record<string, unknown> {
-  return { cwd, stdio: ['ignore', 'pipe', 'pipe'] as const, env: { ...process.env }, shell: IS_WIN };
+  // BUG: old code - shell always false, breaks Windows .cmd wrappers
+  return { cwd, stdio: ['ignore', 'pipe', 'pipe'] as const, env: { ...process.env }, shell: false };
 }
 
 export function commandExists(cmd: string): Promise<boolean> {
